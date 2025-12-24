@@ -41,20 +41,43 @@ export const createProperty = asyncHandler(async (req, res) => {
 
     // Create or find the property owner
     let owner;
+    let shouldUpdateOwner = false;
+
     if (ownerEmail && ownerEmail.trim() !== '') {
         // Check if owner already exists
         owner = await User.findOne({ email: ownerEmail });
         if (owner) {
-            // Update existing owner details
-            if (ownerFullName) owner.fullName = ownerFullName;
-            if (ownerUsername) owner.username = ownerUsername;
-            if (ownerPhoneNumber) owner.phoneNumber = ownerPhoneNumber;
-            if (ownerWhatsAppNumber) owner.whatsappNumber = ownerWhatsAppNumber;
-            if (ownerAgentTitle) owner.agentTitle = ownerAgentTitle;
-            if (ownerAvatarUrl) owner.avatar = ownerAvatarUrl;
-            await owner.save();
+            // Update existing owner details with the dashboard-entered information
+            if (ownerFullName && ownerFullName !== owner.fullName) {
+                owner.fullName = ownerFullName;
+                shouldUpdateOwner = true;
+            }
+            if (ownerUsername && ownerUsername !== owner.username) {
+                owner.username = ownerUsername;
+                shouldUpdateOwner = true;
+            }
+            if (ownerPhoneNumber && ownerPhoneNumber !== owner.phoneNumber) {
+                owner.phoneNumber = ownerPhoneNumber;
+                shouldUpdateOwner = true;
+            }
+            if (ownerWhatsAppNumber && ownerWhatsAppNumber !== owner.whatsappNumber) {
+                owner.whatsappNumber = ownerWhatsAppNumber;
+                shouldUpdateOwner = true;
+            }
+            if (ownerAgentTitle && ownerAgentTitle !== owner.agentTitle) {
+                owner.agentTitle = ownerAgentTitle;
+                shouldUpdateOwner = true;
+            }
+            if (ownerAvatarUrl && ownerAvatarUrl !== owner.avatar) {
+                owner.avatar = ownerAvatarUrl;
+                shouldUpdateOwner = true;
+            }
+
+            if (shouldUpdateOwner) {
+                await owner.save();
+            }
         } else {
-            // Create new owner
+            // Create new owner with dashboard-entered information
             owner = await User.create({
                 fullName: ownerFullName,
                 username: ownerUsername || `owner_${Date.now()}`,
@@ -85,7 +108,11 @@ export const createProperty = asyncHandler(async (req, res) => {
         nearbyLandmarks: typeof nearbyLandmarks === 'string' ? JSON.parse(nearbyLandmarks) : nearbyLandmarks
     });
 
-    return res.status(201).json(new ApiResponse(201, property, "Property Created"));
+    // Populate the owner information in the response to ensure complete data
+    const populatedProperty = await Property.findById(property._id)
+        .populate("owner", "fullName avatar phoneNumber whatsappNumber agentTitle email username");
+
+    return res.status(201).json(new ApiResponse(201, populatedProperty, "Property Created"));
 });
 
 export const updateProperty = asyncHandler(async (req, res) => {
@@ -201,7 +228,11 @@ export const updateProperty = asyncHandler(async (req, res) => {
         { new: true }
     );
 
-    return res.status(200).json(new ApiResponse(200, updatedProperty, "Property Updated"));
+    // Populate the owner information in the response to ensure complete data
+    const populatedUpdatedProperty = await Property.findById(updatedProperty._id)
+        .populate("owner", "fullName avatar phoneNumber whatsappNumber agentTitle email username");
+
+    return res.status(200).json(new ApiResponse(200, populatedUpdatedProperty, "Property Updated"));
 });
 
 export const getAllProperties = asyncHandler(async (req, res) => {
