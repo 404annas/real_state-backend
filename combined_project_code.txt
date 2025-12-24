@@ -1,0 +1,576 @@
+This is the complete, refined backend project provided in the `.txt` format required for your `txt-to-code.py` script. 
+
+I have meticulously integrated the details from all your images:
+1.  **Dynamic Features Grid**: AC, TV, Wardrobes, Water Purifiers, etc.
+2.  **"About Property" Highlights**: The bulleted checklist points.
+3.  **Visit Tracking**: Auto-incrementing visits on every "Get Property" call.
+4.  **Gallery & Floor Plans**: Multi-field file uploads for gallery images and downloadable floor plan PDFs/images.
+5.  **Admin Auth**: OTP-based verification, password hashing, and cookie-based JWT.
+
+### Re-creation Instructions:
+1. Copy the code block below.
+2. Save it as `complete_project.txt`.
+3. Run: `python txt-to-code.py complete_project.txt RealEstateProject`
+
+---
+
+--- START OF FILE: package.json ---
+
+{
+  "name": "real-estate-backend",
+  "version": "1.0.0",
+  "description": "Clean and Scalable Real Estate Backend",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cloudinary": "^2.0.0",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.1.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.9"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}
+
+--- END OF FILE: package.json ---
+
+--- START OF FILE: .env ---
+
+PORT=8000
+MONGODB_URI=mongodb+srv://your_user:your_pass@cluster.mongodb.net
+CORS_ORIGIN=http://localhost:3000
+ACCESS_TOKEN_SECRET=replace_with_long_random_string_1
+ACCESS_TOKEN_EXPIRY=1d
+REFRESH_TOKEN_SECRET=replace_with_long_random_string_2
+REFRESH_TOKEN_EXPIRY=10d
+
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_gmail_app_password
+
+--- END OF FILE: .env ---
+
+--- START OF FILE: src/constants.js ---
+
+export const DB_NAME = "realestate_db"
+
+--- END OF FILE: src/constants.js ---
+
+--- START OF FILE: src/index.js ---
+
+import dotenv from "dotenv";
+import connectDB from "./db/index.js";
+import { app } from './app.js';
+import fs from 'fs';
+
+dotenv.config({ path: './.env' });
+
+// Ensure temp directory exists for uploads
+const dir = './public/temp';
+if (!fs.existsSync(dir)){
+    fs.mkdirSync(dir, { recursive: true });
+}
+
+connectDB()
+.then(() => {
+    app.listen(process.env.PORT || 8000, () => {
+        console.log(`🚀 Server running at: http://localhost:${process.env.PORT || 8000}`);
+    });
+})
+.catch((err) => {
+    console.log("MongoDB connection failed!", err);
+});
+
+--- END OF FILE: src/index.js ---
+
+--- START OF FILE: src/app.js ---
+
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+
+const app = express();
+
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
+app.use(express.json({ limit: "16kb" }));
+app.use(express.urlencoded({ extended: true, limit: "16kb" }));
+app.use(express.static("public"));
+app.use(cookieParser());
+
+// Routes
+import userRouter from "./routes/user.routes.js";
+import propertyRouter from "./routes/property.routes.js";
+
+app.use("/api/v1/users", userRouter);
+app.use("/api/v1/properties", propertyRouter);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+        success: false,
+        message: err.message || "Internal Server Error",
+        errors: err.errors || []
+    });
+});
+
+export { app };
+
+--- END OF FILE: src/app.js ---
+
+--- START OF FILE: src/db/index.js ---
+
+import mongoose from "mongoose";
+import { DB_NAME } from "../constants.js";
+
+const connectDB = async () => {
+    try {
+        const connectionInstance = await mongoose.connect(`${process.env.MONGODB_URI}/${DB_NAME}`);
+        console.log(`\n✅ MongoDB connected! Host: ${connectionInstance.connection.host}`);
+    } catch (error) {
+        console.error("❌ MONGODB connection FAILED: ", error);
+        process.exit(1);
+    }
+}
+
+export default connectDB;
+
+--- END OF FILE: src/db/index.js ---
+
+--- START OF FILE: src/models/user.model.js ---
+
+import mongoose, { Schema } from "mongoose";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+
+const userSchema = new Schema({
+    username: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    fullName: { type: String, required: true, trim: true },
+    avatar: { type: String }, 
+    password: { type: String, required: [true, 'Password is required'] },
+    refreshToken: { type: String },
+    isVerified: { type: Boolean, default: false },
+    otp: { type: String },
+    otpExpiry: { type: Date }
+}, { timestamps: true });
+
+userSchema.pre("save", async function (next) {
+    if (!this.isModified("password")) return next();
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+});
+
+userSchema.methods.isPasswordCorrect = async function (password) {
+    return await bcrypt.compare(password, this.password);
+};
+
+userSchema.methods.generateAccessToken = function () {
+    return jwt.sign({ _id: this._id, email: this.email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: process.env.ACCESS_TOKEN_EXPIRY });
+};
+
+userSchema.methods.generateRefreshToken = function () {
+    return jwt.sign({ _id: this._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: process.env.REFRESH_TOKEN_EXPIRY });
+};
+
+export const User = mongoose.model("User", userSchema);
+
+--- END OF FILE: src/models/user.model.js ---
+
+--- START OF FILE: src/models/property.model.js ---
+
+import mongoose, { Schema } from "mongoose";
+
+const propertySchema = new Schema({
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true },
+    price: { type: Number, required: true },
+    priceUnit: { type: String, enum: ["Night", "Month"], default: "Month" },
+    type: { type: String, enum: ["Lodge", "Apartment", "Condo", "Suite", "Luxue"], required: true },
+    
+    // Status Badges (Image 1, 3, 4)
+    isNew: { type: Boolean, default: false },
+    isFeatured: { type: Boolean, default: false },
+    isTrending: { type: Boolean, default: false },
+
+    address: {
+        street: String,
+        city: { type: String, index: true },
+        state: String,
+        country: String,
+        zip: String
+    },
+
+    // Dynamic Property Features Grid (Image 5)
+    features: {
+        bedrooms: { type: Number, default: 0 },
+        bathrooms: { type: Number, default: 0 },
+        sqft: { type: Number, default: 0 },
+        floor: { type: String }, // e.g., "5th of 12"
+        wardrobe: { type: Number, default: 0 },
+        parking: { type: Number, default: 0 },
+        balcony: { type: String, default: "No" },
+        tv: { type: Number, default: 0 },
+        ac: { type: Number, default: 0 },
+        fridge: { type: Number, default: 0 },
+        microwave: { type: Number, default: 0 },
+        waterPurifier: { type: Number, default: 0 },
+        curtains: { type: String, default: "No" }
+    },
+
+    // Amenities Checklist (Image 6)
+    amenities: [String], // ["Gym", "Pool", "Power Backup", etc.]
+
+    // "About Property" Checklist (Image 5)
+    highlights: [String], // ["100 meters from school", "Terrace with views", etc.]
+
+    // Gallery and Documents (Image 7)
+    images: [String], // Cloudinary URLs
+    floorPlans: [{
+        title: { type: String, default: "Floor Plan" },
+        fileUrl: { type: String }
+    }],
+
+    // Stats & Ratings (Image 2, 4)
+    rating: { type: Number, default: 5.0 },
+    reviewCount: { type: Number, default: 0 },
+    totalVisits: { type: Number, default: 0 },
+    
+    owner: { type: Schema.Types.ObjectId, ref: "User" }
+
+}, { timestamps: true });
+
+export const Property = mongoose.model("Property", propertySchema);
+
+--- END OF FILE: src/models/property.model.js ---
+
+--- START OF FILE: src/controllers/user.controller.js ---
+
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../utils/ApiError.js";
+import { User } from "../models/user.model.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import { sendEmail } from "../utils/mail.js";
+
+const generateAccessAndRefreshTokens = async (userId) => {
+    const user = await User.findById(userId);
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+    return { accessToken, refreshToken };
+};
+
+export const registerUser = asyncHandler(async (req, res) => {
+    const { email, username, password, fullName } = req.body;
+    if (!email || !username || !password || !fullName) throw new ApiError(400, "All fields are required");
+
+    const existedUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existedUser) throw new ApiError(409, "User already exists");
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = Date.now() + 600000; // 10 mins
+
+    const user = await User.create({ fullName, email, password, username, otp, otpExpiry });
+
+    await sendEmail({
+        email: user.email,
+        subject: "Verification OTP",
+        message: `Your OTP is: ${otp}`
+    });
+
+    return res.status(201).json(new ApiResponse(201, { userId: user._id }, "OTP sent to email."));
+});
+
+export const verifyOtp = asyncHandler(async (req, res) => {
+    const { email, otp } = req.body;
+    const user = await User.findOne({ email, otp, otpExpiry: { $gt: Date.now() } });
+    if (!user) throw new ApiError(400, "Invalid or expired OTP");
+
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpiry = undefined;
+    await user.save();
+
+    return res.status(200).json(new ApiResponse(200, {}, "Verified successfully"));
+});
+
+export const loginUser = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) throw new ApiError(404, "User not found");
+    if (!user.isVerified) throw new ApiError(403, "Verify email first");
+
+    const isCorrect = await user.isPasswordCorrect(password);
+    if (!isCorrect) throw new ApiError(401, "Invalid credentials");
+
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user._id);
+    const options = { httpOnly: true, secure: true };
+
+    return res.status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(new ApiResponse(200, { user, accessToken, refreshToken }, "Logged in"));
+});
+
+export const logoutUser = asyncHandler(async (req, res) => {
+    await User.findByIdAndUpdate(req.user._id, { $unset: { refreshToken: 1 } });
+    return res.status(200).clearCookie("accessToken").clearCookie("refreshToken").json(new ApiResponse(200, {}, "Logged out"));
+});
+
+--- END OF FILE: src/controllers/user.controller.js ---
+
+--- START OF FILE: src/controllers/property.controller.js ---
+
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiError } from "../utils/ApiError.js";
+import { Property } from "../models/property.model.js";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+
+export const createProperty = asyncHandler(async (req, res) => {
+    const { features, amenities, highlights, ...rest } = req.body;
+    
+    const imageFiles = req.files?.images || [];
+    const floorPlanFiles = req.files?.floorPlans || [];
+
+    const imageUrls = [];
+    for (const file of imageFiles) {
+        const uploaded = await uploadOnCloudinary(file.path);
+        if (uploaded) imageUrls.push(uploaded.url);
+    }
+
+    const floorPlans = [];
+    for (let i = 0; i < floorPlanFiles.length; i++) {
+        const uploaded = await uploadOnCloudinary(floorPlanFiles[i].path);
+        if (uploaded) {
+            floorPlans.push({
+                title: req.body.floorPlanTitles?.[i] || "Plan",
+                fileUrl: uploaded.url
+            });
+        }
+    }
+
+    const property = await Property.create({
+        ...rest,
+        images: imageUrls,
+        floorPlans,
+        owner: req.user._id,
+        features: JSON.parse(features || '{}'),
+        amenities: JSON.parse(amenities || '[]'),
+        highlights: JSON.parse(highlights || '[]')
+    });
+
+    return res.status(201).json(new ApiResponse(201, property, "Property Created"));
+});
+
+export const getAllProperties = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 10, type, city, minPrice, maxPrice } = req.query;
+    
+    const query = {};
+    if (type) query.type = type;
+    if (city) query["address.city"] = new RegExp(city, 'i');
+    if (minPrice || maxPrice) {
+        query.price = {};
+        if (minPrice) query.price.$gte = Number(minPrice);
+        if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    const properties = await Property.find(query)
+        .populate("owner", "fullName username")
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .sort({ createdAt: -1 });
+
+    const count = await Property.countDocuments(query);
+
+    return res.status(200).json(new ApiResponse(200, {
+        properties,
+        pagination: { total: count, pages: Math.ceil(count / limit), currentPage: page }
+    }, "Success"));
+});
+
+export const getPropertyById = asyncHandler(async (req, res) => {
+    // Increment visit count automatically (Image 4 requirement)
+    const property = await Property.findByIdAndUpdate(
+        req.params.id, 
+        { $inc: { totalVisits: 1 } }, 
+        { new: true }
+    ).populate("owner", "fullName username avatar");
+
+    if (!property) throw new ApiError(404, "Not found");
+    return res.status(200).json(new ApiResponse(200, property, "Success"));
+});
+
+--- END OF FILE: src/controllers/property.controller.js ---
+
+--- START OF FILE: src/routes/user.routes.js ---
+
+import { Router } from "express";
+import { registerUser, verifyOtp, loginUser, logoutUser } from "../controllers/user.controller.js";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
+
+const router = Router();
+
+router.post("/register", registerUser);
+router.post("/verify", verifyOtp);
+router.post("/login", loginUser);
+router.post("/logout", verifyJWT, logoutUser);
+
+export default router;
+
+--- END OF FILE: src/routes/user.routes.js ---
+
+--- START OF FILE: src/routes/property.routes.js ---
+
+import { Router } from "express";
+import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { upload } from "../middlewares/multer.middleware.js";
+import { createProperty, getAllProperties, getPropertyById } from "../controllers/property.controller.js";
+
+const router = Router();
+
+router.get("/", getAllProperties);
+router.get("/:id", getPropertyById);
+
+// Admin / Owner Protected
+router.post("/", verifyJWT, upload.fields([
+    { name: "images", maxCount: 10 },
+    { name: "floorPlans", maxCount: 5 }
+]), createProperty);
+
+export default router;
+
+--- END OF FILE: src/routes/property.routes.js ---
+
+--- START OF FILE: src/utils/ApiError.js ---
+
+class ApiError extends Error {
+    constructor(statusCode, message = "Something went wrong", errors = []) {
+        super(message);
+        this.statusCode = statusCode;
+        this.errors = errors;
+        this.success = false;
+    }
+}
+export { ApiError };
+
+--- END OF FILE: src/utils/ApiError.js ---
+
+--- START OF FILE: src/utils/ApiResponse.js ---
+
+class ApiResponse {
+    constructor(statusCode, data, message = "Success") {
+        this.statusCode = statusCode;
+        this.data = data;
+        this.message = message;
+        this.success = statusCode < 400;
+    }
+}
+export { ApiResponse };
+
+--- END OF FILE: src/utils/ApiResponse.js ---
+
+--- START OF FILE: src/utils/asyncHandler.js ---
+
+export const asyncHandler = (requestHandler) => {
+    return (req, res, next) => {
+        Promise.resolve(requestHandler(req, res, next)).catch((err) => next(err));
+    }
+}
+
+--- END OF FILE: src/utils/asyncHandler.js ---
+
+--- START OF FILE: src/utils/cloudinary.js ---
+
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
+
+export const uploadOnCloudinary = async (localFilePath) => {
+    try {
+        if (!localFilePath) return null;
+        cloudinary.config({ 
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+            api_key: process.env.CLOUDINARY_API_KEY, 
+            api_secret: process.env.CLOUDINARY_API_SECRET 
+        });
+        const response = await cloudinary.uploader.upload(localFilePath, { resource_type: "auto" });
+        fs.unlinkSync(localFilePath);
+        return response;
+    } catch (error) {
+        if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+        return null;
+    }
+}
+
+--- END OF FILE: src/utils/cloudinary.js ---
+
+--- START OF FILE: src/utils/mail.js ---
+
+import nodemailer from "nodemailer";
+
+export const sendEmail = async (options) => {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    });
+    await transporter.sendMail({
+        from: '"Estate Admin" <noreply@estate.com>',
+        to: options.email,
+        subject: options.subject,
+        text: options.message,
+    });
+};
+
+--- END OF FILE: src/utils/mail.js ---
+
+--- START OF FILE: src/middlewares/auth.middleware.js ---
+
+import { ApiError } from "../utils/ApiError.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import jwt from "jsonwebtoken";
+import { User } from "../models/user.model.js";
+
+export const verifyJWT = asyncHandler(async (req, res, next) => {
+    const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "");
+    if (!token) throw new ApiError(401, "Unauthorized");
+
+    try {
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        const user = await User.findById(decoded?._id).select("-password");
+        if (!user) throw new ApiError(401, "Invalid Token");
+        req.user = user;
+        next();
+    } catch (error) {
+        throw new ApiError(401, "Session Expired");
+    }
+});
+
+--- END OF FILE: src/middlewares/auth.middleware.js ---
+
+--- START OF FILE: src/middlewares/multer.middleware.js ---
+
+import multer from "multer";
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, "./public/temp"),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+
+export const upload = multer({ storage });
+
+--- END OF FILE: src/middlewares/multer.middleware.js ---
