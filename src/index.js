@@ -1,28 +1,29 @@
 import dotenv from "dotenv";
 import connectDB from "./db/index.js";
 import { app } from './app.js';
-import fs from 'fs';
 
-dotenv.config({ path: './.env' });
+dotenv.config(); // Vercel handles env vars automatically
 
-// Ensure temp directory exists for uploads
-const dir = './public/temp';
-if (!fs.existsSync(dir)){
-    fs.mkdirSync(dir, { recursive: true });
-}
+// 1. REMOVED: fs.mkdirSync('./public/temp'). 
+// Vercel does not allow writing to the local file system. 
+// If you use Multer, point the destination to '/tmp' instead.
 
-// For Vercel deployment, export the app directly
-export default app;
-
-// For local development, start the server
-if (process.env.NODE_ENV !== 'production') {
-    connectDB()
+// 2. Connect to Database
+// In Serverless, we connect top-level or inside the handler.
+connectDB()
     .then(() => {
-        app.listen(process.env.PORT || 8000, () => {
-            console.log(`🚀 Server running at: http://localhost:${process.env.PORT || 8000}`);
-        });
+        console.log("MongoDB Connected");
     })
     .catch((err) => {
-        console.log("MongoDB connection failed!", err);
+        console.error("MongoDB connection failed!", err);
+    });
+
+// 3. Export for Vercel
+export default app;
+
+// 4. Keep the listener ONLY for local development
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(process.env.PORT || 8000, () => {
+        console.log(`🚀 Server running at: http://localhost:${process.env.PORT || 8000}`);
     });
 }
