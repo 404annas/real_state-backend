@@ -37,4 +37,8 @@ app.use((err, req, res, next) => {
   });
 });
 
+app.get("/", (req, res) => {
+  res.json({ message: "Backend is running successfully!" });
+});
+
 export { app };
