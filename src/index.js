@@ -19,7 +19,7 @@ export default app;
 
 // Local development only
 if (process.env.NODE_ENV !== 'production') {
-    const port = process.env.PORT || 8000;
+    const port = process.env.PORT || 8001;
     app.listen(port, () => {
         console.log(`🚀 Server running at: http://localhost:${port}`);
     });

@@ -5,6 +5,7 @@ import userRouter from '../src/routes/user.routes.js';
 import propertyRouter from '../src/routes/property.routes.js';
 import inquiryRouter from '../src/routes/inquiry.routes.js';
 import mongoose from 'mongoose';
+import { parse } from 'url';
 
 // Create a standalone express app for Vercel
 const app = express();
@@ -60,8 +61,14 @@ export default async function handler(req, res) {
     }
   }
 
+  // Parse the URL to reconstruct the proper path for express routing
+  const parsedUrl = parse(req.url, true);
+  req.url = parsedUrl.pathname + parsedUrl.search;
+  req.originalUrl = req.url;
+  req.query = parsedUrl.query;
+
   // Use the express app to handle the request
-  app(req, res);
+  return app(req, res);
 }
 
 export const config = {
