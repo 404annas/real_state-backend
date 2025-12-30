@@ -6,7 +6,7 @@ const propertySchema = new Schema({
     price: { type: Number, required: true },
     priceUnit: { type: String, enum: ["Night", "Month"], default: "Month" },
     type: { type: String, enum: ["Lodge", "Apartment", "Condo", "Suite", "Luxue"], required: true },
-    propertyFor: { type: String, enum: ["Rent", "Buy"], required: true },
+    propertyFor: { type: String, enum: ["Rent", "Buy", "Sell"], required: true },
 
     // Status Badges (Image 1, 3, 4)
     isNew: { type: Boolean, default: false },
