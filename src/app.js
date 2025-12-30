@@ -9,7 +9,9 @@ const app = express();
 const corsOptions = {
   origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : ["http://localhost:3000", "http://localhost:3001", "http://localhost:3004", "https://realstates2.netlify.app", "https://real-state-frontend-khaki.vercel.app"],
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization", "Content-Length", "X-Content-Type-Options", "X-Requested-With", "X-HTTP-Method-Override"]
 };
 
 app.use(cors(corsOptions));

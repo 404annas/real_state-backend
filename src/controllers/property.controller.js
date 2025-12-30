@@ -5,9 +5,16 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
+const uploadMultipleFiles = async (files) => {
+    if (!files || files.length === 0) return [];
+    const uploadPromises = files.map(file => uploadOnCloudinary(file));
+    const results = await Promise.all(uploadPromises);
+    return results.filter(r => r !== null).map(r => r.url);
+};
+
 export const createProperty = asyncHandler(async (req, res) => {
     const { features, amenities, highlights, whyBookWithUs, nearbyLandmarks, address,
-            ownerFullName, ownerUsername, ownerPhoneNumber, ownerWhatsAppNumber, ownerEmail, ownerAgentTitle, ...rest } = req.body;
+        ownerFullName, ownerUsername, ownerPhoneNumber, ownerWhatsAppNumber, ownerEmail, ownerAgentTitle, ...rest } = req.body;
 
     const imageFiles = req.files?.images || [];
     const floorPlanFiles = req.files?.floorPlans || [];
@@ -15,13 +22,13 @@ export const createProperty = asyncHandler(async (req, res) => {
 
     const imageUrls = [];
     for (const file of imageFiles) {
-        const uploaded = await uploadOnCloudinary(file.path);
+        const uploaded = await uploadOnCloudinary(file); // Pass the entire file object, not just the path
         if (uploaded) imageUrls.push(uploaded.url);
     }
 
     const floorPlans = [];
     for (let i = 0; i < floorPlanFiles.length; i++) {
-        const uploaded = await uploadOnCloudinary(floorPlanFiles[i].path);
+        const uploaded = await uploadOnCloudinary(floorPlanFiles[i]); // Pass the entire file object
         if (uploaded) {
             floorPlans.push({
                 title: req.body.floorPlanTitles?.[i] || "Plan",
@@ -33,7 +40,7 @@ export const createProperty = asyncHandler(async (req, res) => {
     // Handle owner avatar upload
     let ownerAvatarUrl = null;
     if (ownerAvatarFile) {
-        const avatarUploaded = await uploadOnCloudinary(ownerAvatarFile.path);
+        const avatarUploaded = await uploadOnCloudinary(ownerAvatarFile); // Pass the entire file object
         if (avatarUploaded) {
             ownerAvatarUrl = avatarUploaded.url;
         }
@@ -118,7 +125,7 @@ export const createProperty = asyncHandler(async (req, res) => {
 export const updateProperty = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { features, amenities, highlights, whyBookWithUs, nearbyLandmarks, address,
-            ownerFullName, ownerUsername, ownerPhoneNumber, ownerWhatsAppNumber, ownerEmail, ownerAgentTitle, ...rest } = req.body;
+        ownerFullName, ownerUsername, ownerPhoneNumber, ownerWhatsAppNumber, ownerEmail, ownerAgentTitle, ...rest } = req.body;
 
     const imageFiles = req.files?.images || [];
     const floorPlanFiles = req.files?.floorPlans || [];
@@ -128,22 +135,58 @@ export const updateProperty = asyncHandler(async (req, res) => {
     const existingProperty = await Property.findById(id);
     if (!existingProperty) throw new ApiError(404, "Property not found");
 
-    // Handle image uploads
-    const imageUrls = [...existingProperty.images]; // Keep existing images
-    for (const file of imageFiles) {
-        const uploaded = await uploadOnCloudinary(file.path);
-        if (uploaded) imageUrls.push(uploaded.url);
+    // Handle image uploads - if new images are provided, replace existing ones; otherwise keep existing
+    let imageUrls = [...existingProperty.images]; // Start with existing images
+    if (imageFiles && imageFiles.length > 0) {
+        // If new images are uploaded, add them to the list
+        for (const file of imageFiles) {
+            const uploaded = await uploadOnCloudinary(file); // Pass the entire file object
+            if (uploaded) imageUrls.push(uploaded.url);
+        }
+    }
+    // If existing images are provided in the request body, use them instead of the current ones
+    if (req.body.existingImages) {
+        // Handle case where existing images are sent as strings to keep them
+        if (typeof req.body.existingImages === 'string') {
+            imageUrls = [req.body.existingImages]; // Replace with single existing image
+        } else if (Array.isArray(req.body.existingImages)) {
+            imageUrls = req.body.existingImages; // Replace with array of existing images
+        }
     }
 
-    // Handle floor plan uploads
-    const floorPlans = [...existingProperty.floorPlans]; // Keep existing floor plans
-    for (let i = 0; i < floorPlanFiles.length; i++) {
-        const uploaded = await uploadOnCloudinary(floorPlanFiles[i].path);
-        if (uploaded) {
-            floorPlans.push({
-                title: req.body.floorPlanTitles?.[i] || "Plan",
-                fileUrl: uploaded.url
-            });
+    // Handle floor plan uploads - if new floor plans are provided, replace existing ones; otherwise keep existing
+    let floorPlans = [...existingProperty.floorPlans]; // Start with existing floor plans
+    if (floorPlanFiles && floorPlanFiles.length > 0) {
+        // If new floor plans are uploaded, add them to the list
+        for (let i = 0; i < floorPlanFiles.length; i++) {
+            const uploaded = await uploadOnCloudinary(floorPlanFiles[i]); // Pass the entire file object
+            if (uploaded) {
+                floorPlans.push({
+                    title: req.body.floorPlanTitles?.[i] || "Plan",
+                    fileUrl: uploaded.url
+                });
+            }
+        }
+    }
+    // If existing floor plans are provided in the request body, use them instead of the current ones
+    if (req.body.existingFloorPlans) {
+        // Handle case where existing floor plans are sent as strings to keep them
+        if (typeof req.body.existingFloorPlans === 'string') {
+            try {
+                floorPlans = [JSON.parse(req.body.existingFloorPlans)]; // Replace with single existing floor plan
+            } catch (e) {
+                console.error("Error parsing existing floor plan:", e);
+            }
+        } else if (Array.isArray(req.body.existingFloorPlans)) {
+            floorPlans = []; // Clear existing floor plans and add the ones specified
+            for (const floorPlanStr of req.body.existingFloorPlans) {
+                try {
+                    const existingFloorPlan = JSON.parse(floorPlanStr);
+                    floorPlans.push(existingFloorPlan);
+                } catch (e) {
+                    console.error("Error parsing existing floor plan:", e);
+                }
+            }
         }
     }
 
@@ -199,7 +242,7 @@ export const updateProperty = asyncHandler(async (req, res) => {
 
     // Handle owner avatar upload
     if (ownerAvatarFile) {
-        const avatarUploaded = await uploadOnCloudinary(ownerAvatarFile.path);
+        const avatarUploaded = await uploadOnCloudinary(ownerAvatarFile); // Pass the entire file object
         if (avatarUploaded) {
             owner.avatar = avatarUploaded.url;
             shouldUpdateOwner = true;

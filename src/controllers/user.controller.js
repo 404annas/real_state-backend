@@ -126,8 +126,8 @@ export const updateCurrentUserAvatar = asyncHandler(async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) throw new ApiError(404, "User not found");
 
-    // Upload avatar to cloudinary
-    const avatar = await uploadOnCloudinary(req.file.path);
+    // Pass the whole file object (which contains the buffer)
+    const avatar = await uploadOnCloudinary(req.file);
     if (!avatar) throw new ApiError(400, "Avatar upload failed");
 
     user.avatar = avatar.url;

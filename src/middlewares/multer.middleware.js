@@ -9,11 +9,14 @@ export const upload = multer({
         fileSize: 5 * 1024 * 1024, // 5MB limit
     },
     fileFilter: (req, file, cb) => {
-        // Accept images only
-        if (file.mimetype.startsWith('image/')) {
+        // Accept images and PDFs for floor plans
+        if (file.mimetype.startsWith('image/') ||
+            file.mimetype === 'application/pdf' ||
+            file.mimetype === 'application/msword' ||
+            file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
             cb(null, true);
         } else {
-            cb(new Error('Only image files are allowed!'), false);
+            cb(new Error('Only image and document files are allowed!'), false);
         }
     }
 });
